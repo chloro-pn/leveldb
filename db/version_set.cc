@@ -288,14 +288,18 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
   tmp.reserve(files_[0].size());
   for (uint32_t i = 0; i < files_[0].size(); i++) {
     FileMetaData* f = files_[0][i];
+    //只有当查找的key在sstable文件存储数据的范围中时，才有可能存在要查找的数据。
     if (ucmp->Compare(user_key, f->smallest.user_key()) >= 0 &&
         ucmp->Compare(user_key, f->largest.user_key()) <= 0) {
       tmp.push_back(f);
     }
   }
+  //如果tmp中有对应的sstable。
   if (!tmp.empty()) {
+    //sstable文件按照从新到旧的顺序排列。
     std::sort(tmp.begin(), tmp.end(), NewestFirst);
     for (uint32_t i = 0; i < tmp.size(); i++) {
+      //这里调用的State的Match函数，如果不用继续查找了则返回。
       if (!(*func)(arg, 0, tmp[i])) {
         return;
       }
@@ -308,12 +312,16 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
     if (num_files == 0) continue;
 
     // Binary search to find earliest index whose largest key >= internal_key.
+    // level大于0的sstable存储的key的范围是不重叠的，所以可以二分查找。
+    // 只有最大key大于等于查找key，才进行搜索。
     uint32_t index = FindFile(vset_->icmp_, files_[level], internal_key);
     if (index < num_files) {
       FileMetaData* f = files_[level][index];
+      // 如果最小key都大于查找key，也不用进行搜索。
       if (ucmp->Compare(user_key, f->smallest.user_key()) < 0) {
         // All of "f" is past any data for user_key
       } else {
+          //运行匹配函数，如果不用继续查找了则返回。
         if (!(*func)(arg, level, f)) {
           return;
         }
@@ -324,9 +332,11 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
 
 Status Version::Get(const ReadOptions& options, const LookupKey& k,
                     std::string* value, GetStats* stats) {
+  //初始化输出参数stats。
   stats->seek_file = nullptr;
   stats->seek_file_level = -1;
 
+  //State记录了本次查询过程中的各种信息。
   struct State {
     Saver saver;
     GetStats* stats;
@@ -339,19 +349,25 @@ Status Version::Get(const ReadOptions& options, const LookupKey& k,
     Status s;
     bool found;
 
+    //返回值为false则不用再进行查找（找到了或者出错）
+    //返回值为true则继续查找。
     static bool Match(void* arg, int level, FileMetaData* f) {
       State* state = reinterpret_cast<State*>(arg);
 
+      //第二次进来的时候会触发if语句
       if (state->stats->seek_file == nullptr &&
           state->last_file_read != nullptr) {
         // We have had more than one seek for this read.  Charge the 1st file.
+        // 超过一次seek，就将第一次查询的f记录在seek_file中，对应的level记录在
+        // seek_file_level中。
         state->stats->seek_file = state->last_file_read;
         state->stats->seek_file_level = state->last_file_read_level;
       }
-
+      //第一次进来的时候跳过if语句，设置last_file_read和last_file_read_level。
       state->last_file_read = f;
       state->last_file_read_level = level;
 
+      //真正的查找函数。
       state->s = state->vset->table_cache_->Get(*state->options, f->number,
                                                 f->file_size, state->ikey,
                                                 &state->saver, SaveValue);
@@ -395,6 +411,7 @@ Status Version::Get(const ReadOptions& options, const LookupKey& k,
   state.saver.user_key = k.user_key();
   state.saver.value = value;
 
+  //在各个level中查找key，返回结果记录在state中。
   ForEachOverlapping(state.saver.user_key, state.ikey, &state, &State::Match);
 
   return state.found ? state.s : Status::NotFound(Slice());

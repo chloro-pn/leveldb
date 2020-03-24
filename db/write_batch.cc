@@ -95,6 +95,7 @@ void WriteBatchInternal::SetSequence(WriteBatch* b, SequenceNumber seq) {
   EncodeFixed64(&b->rep_[0], seq);
 }
 
+//Put接口，一次修改WriteBatch当前操作集合的count，添加本次操作的类型，添加本次操作的key和value。
 void WriteBatch::Put(const Slice& key, const Slice& value) {
   WriteBatchInternal::SetCount(this, WriteBatchInternal::Count(this) + 1);
   rep_.push_back(static_cast<char>(kTypeValue));

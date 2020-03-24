@@ -82,22 +82,31 @@ void MemTable::Add(SequenceNumber s, ValueType type, const Slice& key,
   //  value bytes  : char[value.size()]
   size_t key_size = key.size();
   size_t val_size = value.size();
+  //internal_key的大小为user_key + 8字节
   size_t internal_key_size = key_size + 8;
   const size_t encoded_len = VarintLength(internal_key_size) +
                              internal_key_size + VarintLength(val_size) +
                              val_size;
   char* buf = arena_.Allocate(encoded_len);
+  //首先将internal_key_size的大小按照变长编码写入buf。
   char* p = EncodeVarint32(buf, internal_key_size);
+  //然后将user_key写入buf。
   memcpy(p, key.data(), key_size);
   p += key_size;
+  //前七个字节存储序列号，最后一个字节存储本次操作的类型。
+  //将这八个字节写入buf。
   EncodeFixed64(p, (s << 8) | type);
   p += 8;
+  //接着将value的大小按照变长编码写入buf。
   p = EncodeVarint32(p, val_size);
+  //将value写入buf。
   memcpy(p, value.data(), val_size);
   assert(p + val_size == buf + encoded_len);
+  //插入数据。
   table_.Insert(buf);
 }
 
+//在磁盘中搜索key
 bool MemTable::Get(const LookupKey& key, std::string* value, Status* s) {
   Slice memkey = key.memtable_key();
   Table::Iterator iter(&table_);

@@ -63,6 +63,8 @@ class LEVELDB_EXPORT DB {
   // Set the database entry for "key" to "value".  Returns OK on success,
   // and a non-OK status on error.
   // Note: consider setting options.sync = true.
+
+  // 调用了Write接口
   virtual Status Put(const WriteOptions& options, const Slice& key,
                      const Slice& value) = 0;
 
@@ -70,11 +72,15 @@ class LEVELDB_EXPORT DB {
   // success, and a non-OK status on error.  It is not an error if "key"
   // did not exist in the database.
   // Note: consider setting options.sync = true.
+
+  // 调用了Write接口
   virtual Status Delete(const WriteOptions& options, const Slice& key) = 0;
 
   // Apply the specified updates to the database.
   // Returns OK on success, non-OK on failure.
   // Note: consider setting options.sync = true.
+
+  //纯虚函数，实现在DBImpl类中
   virtual Status Write(const WriteOptions& options, WriteBatch* updates) = 0;
 
   // If the database contains an entry for "key" store the
@@ -84,6 +90,8 @@ class LEVELDB_EXPORT DB {
   // a status for which Status::IsNotFound() returns true.
   //
   // May return some other Status on an error.
+
+  //纯虚函数，实现在DBImpl类中
   virtual Status Get(const ReadOptions& options, const Slice& key,
                      std::string* value) = 0;
 

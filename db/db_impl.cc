@@ -1108,44 +1108,65 @@ int64_t DBImpl::TEST_MaxNextLevelOverlappingBytes() {
   return versions_->MaxNextLevelOverlappingBytes();
 }
 
+//根据key查找可能存在的value。
 Status DBImpl::Get(const ReadOptions& options, const Slice& key,
                    std::string* value) {
   Status s;
   MutexLock l(&mutex_);
+  //用序列号实现快照隔离，可以基于某个序列号作为查找序列号，这样会将
+  //该序列号之后的更新或者删除操作忽略。
   SequenceNumber snapshot;
   if (options.snapshot != nullptr) {
     snapshot =
         static_cast<const SnapshotImpl*>(options.snapshot)->sequence_number();
   } else {
+    //如果没有提供序列号，默认使用当前最新的序列号。
     snapshot = versions_->LastSequence();
   }
 
+  //Get操作会依次从mem，imem和当前版本的sstable文件集合中进行查找，这
+  //也是数据从新到旧的顺序。
   MemTable* mem = mem_;
   MemTable* imm = imm_;
   Version* current = versions_->current();
   mem->Ref();
   if (imm != nullptr) imm->Ref();
   current->Ref();
-
+  //have_stat_update作为一个标识，当进入磁盘进行搜索时该标志被设置为true。
   bool have_stat_update = false;
+  //一个输出型参数，在current->Get函数中可能会被设置。
   Version::GetStats stats;
 
   // Unlock while reading from files and memtables
   {
     mutex_.Unlock();
     // First look in the memtable, then in the immutable memtable (if any).
+    //类LookupKey是一个辅助类，用于Get函数，因为
+    //存储在leveldb内部的key-value按照某种编码格式，将key和value以及对应的序列号编码在一起作为一个entry。
+    //因此Get流程也要根据key和提供的序列号合成对应格式的entry，便于后续比较查找。
+    //entry的格式如下：
+    //变长编码的表示internal_key大小的字段，接着internal_key，变长编码的表示value大小的字段，接着value。
+    //internal_key是user_key和序列号编码形成的内部key，格式：user_key + 7字节的序列号 + 1字节的type。
     LookupKey lkey(key, snapshot);
+    //首先在mem中查找，如果没找到且imem存在，则在imem中查找。
     if (mem->Get(lkey, value, &s)) {
       // Done
     } else if (imm != nullptr && imm->Get(lkey, value, &s)) {
       // Done
     } else {
+      //最后在当前版本中进行查找，并设置了标识have_stat_update。
+      //leveldb的查找操作可能会造成文件合并，而stats记录了本次查找操作“选择”的sstable文件。（选择策略见后续，不一定每次都会选择）
       s = current->Get(options, lkey, value, &stats);
       have_stat_update = true;
     }
     mutex_.Lock();
   }
 
+  //UpdateStats函数根据选择的sstable文件，更新其某个属性值且判断这个磁盘文件是否需要合并。
+  //如果需要的话调用函数MaybeScheduleCompaction。
+  //实际上每个sstable文件都具有一个属性：allowed_seeks.这个属性记录了sstable文件允许被查找的次数，
+  //每当在本文件中进行了查找且没有找到，属性值就减1，当该属性值到0时意味着sstable文件中的数据过冷，向
+  //下层合并。
   if (have_stat_update && current->UpdateStats(stats)) {
     MaybeScheduleCompaction();
   }
@@ -1185,10 +1206,13 @@ void DBImpl::ReleaseSnapshot(const Snapshot* snapshot) {
 }
 
 // Convenience methods
+
+// 调用DB::Put函数，最终调用了DBImpl::Write函数
 Status DBImpl::Put(const WriteOptions& o, const Slice& key, const Slice& val) {
   return DB::Put(o, key, val);
 }
 
+// 调用DB::Delete函数， 最终调用了DBImpl::Write函数
 Status DBImpl::Delete(const WriteOptions& options, const Slice& key) {
   return DB::Delete(options, key);
 }
@@ -1462,6 +1486,8 @@ void DBImpl::GetApproximateSizes(const Range* range, int n, uint64_t* sizes) {
 
 // Default implementations of convenience methods that subclasses of DB
 // can call if they wish
+
+//
 Status DB::Put(const WriteOptions& opt, const Slice& key, const Slice& value) {
   WriteBatch batch;
   batch.Put(key, value);

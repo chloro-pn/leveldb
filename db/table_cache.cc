@@ -97,6 +97,7 @@ Iterator* TableCache::NewIterator(const ReadOptions& options,
   return result;
 }
 
+//TableCache 内存中缓存着某些sstable，在分析sstable文件格式之前先不分析这里，因为涉及到磁盘文件的存储格式。
 Status TableCache::Get(const ReadOptions& options, uint64_t file_number,
                        uint64_t file_size, const Slice& k, void* arg,
                        void (*handle_result)(void*, const Slice&,

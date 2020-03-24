@@ -119,16 +119,26 @@ LookupKey::LookupKey(const Slice& user_key, SequenceNumber s) {
   size_t usize = user_key.size();
   size_t needed = usize + 13;  // A conservative estimate
   char* dst;
+  //space_是栈上的空间，如果需要的内存够用的话就用space_，否则从堆申请。
   if (needed <= sizeof(space_)) {
     dst = space_;
   } else {
     dst = new char[needed];
   }
   start_ = dst;
+  //internal_key的大小的字段（等于user_key大小+8字节）
   dst = EncodeVarint32(dst, usize + 8);
   kstart_ = dst;
+  //写入user_key。
   memcpy(dst, user_key.data(), usize);
   dst += usize;
+  //写入八个字节的序列号+type组合。函数PackSequenceAndType就是将s左移8位然后拼接type字段。
+  //注意这个类型：kValueTypeForSeek，专门用来查找的类型。而插入数据或者删除数据的类型为
+  //kTypeDeletion和kTypeValue。kValueTypeForSeek对应的值应该是这些类型中最大的。
+  //why？
+  //因为type字段拼接在序列号字段中，而leveldb中的序列号代表了数据的新旧，在对key进行排序的过程中不会将
+  //type从序列号中分离出来再进行比较（因为序列号字段已经是唯一的，所以加上type不影响排序结果）。但是查找
+  //过程中，如果你用于查找的type小于某个操作的type，会导致序列号进行比较的时候漏了最新的操作。
   EncodeFixed64(dst, PackSequenceAndType(s, kValueTypeForSeek));
   dst += 8;
   end_ = dst;
