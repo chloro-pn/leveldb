@@ -542,6 +542,7 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   return s;
 }
 
+//leveldb中的minor compaction操作。
 void DBImpl::CompactMemTable() {
   mutex_.AssertHeld();
   assert(imm_ != nullptr);
@@ -698,6 +699,7 @@ void DBImpl::BackgroundCall() {
 void DBImpl::BackgroundCompaction() {
   mutex_.AssertHeld();
 
+  //写满mem_之后触发的合并操作在这里处理
   if (imm_ != nullptr) {
     CompactMemTable();
     return;
@@ -1218,27 +1220,41 @@ Status DBImpl::Delete(const WriteOptions& options, const Slice& key) {
 }
 
 Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
+  //Writer类是一个持有WriteBatch，以及条件变量和锁的类
+  //用于多线程写入数据的同步。
   Writer w(&mutex_);
   w.batch = updates;
   w.sync = options.sync;
   w.done = false;
 
+  //lock
   MutexLock l(&mutex_);
+  //将w写入writers_。
   writers_.push_back(&w);
+  //等待在w的条件变量上
   while (!w.done && &w != writers_.front()) {
     w.cv.Wait();
   }
+  //唤醒之后检查本w的数据是不是已经被写入数据库？
+  //当某个w线程被唤醒后，它不仅会处理自己的w，还会从writers_中取出尽量多的
+  //w，组合并一起写入数据库，因此w线程被唤醒后可能自己的w已经被其他线程处理。
   if (w.done) {
+    //如果已经被处理则返回。
     return w.status;
   }
 
   // May temporarily unlock and wait.
+  //确认内存mem有足够的空间写入数据
+  //leveldb内存中存储的数据量有上限，如果到达上限则触发合并操作，将
+  //当前mem转为imem并写入磁盘文件。
   Status status = MakeRoomForWrite(updates == nullptr);
   uint64_t last_sequence = versions_->LastSequence();
   Writer* last_writer = &w;
   if (status.ok() && updates != nullptr) {  // nullptr batch is for compactions
+    //BuildBatchGroup函数从writers_中尽量提取写入数据。
     WriteBatch* write_batch = BuildBatchGroup(&last_writer);
     WriteBatchInternal::SetSequence(write_batch, last_sequence + 1);
+    //更新last_sequence。
     last_sequence += WriteBatchInternal::Count(write_batch);
 
     // Add to log and apply to memtable.  We can release the lock
@@ -1247,8 +1263,10 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
     // into mem_.
     {
       mutex_.Unlock();
+      //写入内存之前先写入log。
       status = log_->AddRecord(WriteBatchInternal::Contents(write_batch));
       bool sync_error = false;
+      //如果本次w是同步w，则调用logfile_->Sync函数将日志文件刷入磁盘。
       if (status.ok() && options.sync) {
         status = logfile_->Sync();
         if (!status.ok()) {
@@ -1256,6 +1274,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
         }
       }
       if (status.ok()) {
+        //将数据插入mem_
         status = WriteBatchInternal::InsertInto(write_batch, mem_);
       }
       mutex_.Lock();
@@ -1268,6 +1287,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
     }
     if (write_batch == tmp_batch_) tmp_batch_->Clear();
 
+    //更新序列号，每个写入的key-value都会占用一个序列号。
     versions_->SetLastSequence(last_sequence);
   }
 
@@ -1354,6 +1374,12 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       break;
     } else if (allow_delay && versions_->NumLevelFiles(0) >=
                                   config::kL0_SlowdownWritesTrigger) {
+      //如果level0层的sstable文件数量到达了软限制，则放慢写入速度。
+      //下面的注释意思是说当前已经接近了level0层sstable文件数的硬限制，
+      //我们不直接在到达硬限制时等待单个写入操作数秒钟，而是在快接近硬限制时
+      //延迟每次独立的写入。以此来降低延迟的变化幅度（将单个阻塞的延迟分摊在多次独立的写中，提高用户体验）
+      //如果w线程和后台合并线程在同一个核上运行的话这么做还会将w线程占有的部分cpu资源
+      //让给合并线程。
       // We are getting close to hitting a hard limit on the number of
       // L0 files.  Rather than delaying a single write by several
       // seconds when we hit the hard limit, start delaying each
@@ -1366,6 +1392,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       mutex_.Lock();
     } else if (!force &&
                (mem_->ApproximateMemoryUsage() <= options_.write_buffer_size)) {
+      //当前空间足够，直接跳出循环。
       // There is room in current memtable
       break;
     } else if (imm_ != nullptr) {
@@ -1374,12 +1401,15 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       Log(options_.info_log, "Current memtable full; waiting...\n");
       background_work_finished_signal_.Wait();
     } else if (versions_->NumLevelFiles(0) >= config::kL0_StopWritesTrigger) {
+      //到达了level0层的sstable文件数量的硬限制，等待后台合并完成。
       // There are too many level-0 files.
       Log(options_.info_log, "Too many L0 files; waiting...\n");
       background_work_finished_signal_.Wait();
     } else {
       // Attempt to switch to a new memtable and trigger compaction of old
+      //准备将mem中的数据写入level0层。
       assert(versions_->PrevLogNumber() == 0);
+      //首先打开一个新的logfile。
       uint64_t new_log_number = versions_->NewFileNumber();
       WritableFile* lfile = nullptr;
       s = env_->NewWritableFile(LogFileName(dbname_, new_log_number), &lfile);
@@ -1388,16 +1418,20 @@ Status DBImpl::MakeRoomForWrite(bool force) {
         versions_->ReuseFileNumber(new_log_number);
         break;
       }
+      //关闭上一个logfile，使用当前生成的logfile。
       delete log_;
       delete logfile_;
       logfile_ = lfile;
       logfile_number_ = new_log_number;
       log_ = new log::Writer(lfile);
+      //将已经写满的mem_赋值给imm_。
       imm_ = mem_;
       has_imm_.store(true, std::memory_order_release);
+      //内存中新生成一个memtable。
       mem_ = new MemTable(internal_comparator_);
       mem_->Ref();
       force = false;  // Do not force another compaction if have room
+      //将imm_写入磁盘。
       MaybeScheduleCompaction();
     }
   }
