@@ -498,11 +498,15 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
   return status;
 }
 
+//将mem写入磁盘，同时设置edit。
 Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
                                 Version* base) {
   mutex_.AssertHeld();
   const uint64_t start_micros = env_->NowMicros();
+  //首先定义一个文件元数据类型的对象，该对象和sstable文件一一对应，记录了
+  //对应的sstable文件的一些信息。
   FileMetaData meta;
+  //向versions_申请一个文件号。
   meta.number = versions_->NewFileNumber();
   pending_outputs_.insert(meta.number);
   Iterator* iter = mem->NewIterator();
@@ -512,6 +516,7 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   Status s;
   {
     mutex_.Unlock();
+    //写盘操作。
     s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);
     mutex_.Lock();
   }
@@ -529,8 +534,10 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
     const Slice min_user_key = meta.smallest.user_key();
     const Slice max_user_key = meta.largest.user_key();
     if (base != nullptr) {
+      //为本次生成的sstable文件选择合适的level（之前一直以为新生成的sstable一直在level0层。）
       level = base->PickLevelForMemTableOutput(min_user_key, max_user_key);
     }
+    //用meta信息更新edit信息。
     edit->AddFile(level, meta.number, meta.file_size, meta.smallest,
                   meta.largest);
   }
@@ -542,7 +549,8 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   return s;
 }
 
-//leveldb中的minor compaction操作。
+//leveldb中的minor compaction操作。首先将imm_写入磁盘，生成level0的sstable文件。
+//然后使用对应的版本变更信息生成一个新的version并添加进versions_中，最后删除掉一些不需要的文件。
 void DBImpl::CompactMemTable() {
   mutex_.AssertHeld();
   assert(imm_ != nullptr);
@@ -1396,9 +1404,11 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       // There is room in current memtable
       break;
     } else if (imm_ != nullptr) {
+      //当前空间不够，但是imm_又不为零，意味着上一次的minor compaction还没有完成。
       // We have filled up the current memtable, but the previous
       // one is still being compacted, so we wait.
       Log(options_.info_log, "Current memtable full; waiting...\n");
+      //等待上后台合并操作完成。
       background_work_finished_signal_.Wait();
     } else if (versions_->NumLevelFiles(0) >= config::kL0_StopWritesTrigger) {
       //到达了level0层的sstable文件数量的硬限制，等待后台合并完成。

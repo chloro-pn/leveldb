@@ -127,15 +127,19 @@ bool SomeFileOverlapsRange(const InternalKeyComparator& icmp,
   const Comparator* ucmp = icmp.user_comparator();
   if (!disjoint_sorted_files) {
     // Need to check against all files
+    //level0层的文件是可能重合的，因此需要遍历所有的sstable。
     for (size_t i = 0; i < files.size(); i++) {
       const FileMetaData* f = files[i];
+      //和f对应的sstable不重合，最小k大于f的最大k，或者最大k小于f的最小k。
       if (AfterFile(ucmp, smallest_user_key, f) ||
           BeforeFile(ucmp, largest_user_key, f)) {
         // No overlap
       } else {
+          //只要与一个sstable重复，就返回
         return true;  // Overlap
       }
     }
+    //不重复
     return false;
   }
 
@@ -488,6 +492,7 @@ bool Version::OverlapInLevel(int level, const Slice* smallest_user_key,
 int Version::PickLevelForMemTableOutput(const Slice& smallest_user_key,
                                         const Slice& largest_user_key) {
   int level = 0;
+  //如果在第0层没有找到与本次生成的sstable重合的sstable
   if (!OverlapInLevel(0, &smallest_user_key, &largest_user_key)) {
     // Push to next level if there is no overlap in next level,
     // and the #bytes overlapping in the level after that are limited.
