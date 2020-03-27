@@ -42,6 +42,7 @@ class BlockBuilder {
   bool empty() const { return buffer_.empty(); }
 
  private:
+  //每个block中都含有一组restart points。
   const Options* options_;
   std::string buffer_;              // Destination buffer
   std::vector<uint32_t> restarts_;  // Restart points

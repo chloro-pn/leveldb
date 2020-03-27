@@ -1299,6 +1299,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
     versions_->SetLastSequence(last_sequence);
   }
 
+  //将本次拿出来的所有w的done设置为true。
   while (true) {
     Writer* ready = writers_.front();
     writers_.pop_front();
@@ -1311,6 +1312,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
   }
 
   // Notify new head of write queue
+  // 通知队列头w对应的写线程。
   if (!writers_.empty()) {
     writers_.front()->cv.Signal();
   }

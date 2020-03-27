@@ -41,6 +41,7 @@ class BytewiseComparatorImpl : public Comparator {
     if (diff_index >= min_length) {
       // Do not shorten if one string is a prefix of the other
     } else {
+        //尝试缩短start的长度，前提是不能改变之前的序关系。
       uint8_t diff_byte = static_cast<uint8_t>((*start)[diff_index]);
       if (diff_byte < static_cast<uint8_t>(0xff) &&
           diff_byte + 1 < static_cast<uint8_t>(limit[diff_index])) {
@@ -51,6 +52,7 @@ class BytewiseComparatorImpl : public Comparator {
     }
   }
 
+  //让*key在满足大于其本身时，选择尽量短的值作为其新值。
   void FindShortSuccessor(std::string* key) const override {
     // Find first character that can be incremented
     size_t n = key->size();
