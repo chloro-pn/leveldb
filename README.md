@@ -21,7 +21,10 @@ BuildTable函数中使用了TableBuilder类，该类描述了sstable文件的具
 该类的对象写入磁盘文件。write操作是一个漫长的流程，参考文章：https://www.cnblogs.com/cobbliu/articles/10680759.html
 
 2020-03-27:
-* BlockBuilder类的分析。(meta_index 和 footer index除外)
+* BlockBuilder类的分析。(metaindex block 和 footer block除外)
+
+2020-03-28:
+* meta_index_block , filter block , footer block分析。
 
 ##### todo：
-* blockBuilder关于元信息的分析。
+* LRUCache分析

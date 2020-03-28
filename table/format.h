@@ -46,12 +46,14 @@ class BlockHandle {
 
 // Footer encapsulates the fixed information stored at the tail
 // end of every table file.
+// Fotter记录了存储在每个table文件莫问的信息。
 class Footer {
  public:
   // Encoded length of a Footer.  Note that the serialization of a
   // Footer will always occupy exactly this many bytes.  It consists
   // of two block handles and a magic number.
-  enum { kEncodedLength = 2 * BlockHandle::kMaxEncodedLength + 8 };
+  enum { kEncodedLength = 2 * BlockHandle::kMaxEncodedLength + 8 }; // == 48字节，因为存储了两个block的信息，每一个
+  //都要存储offset和size，存储方式为变长存储64位的话最多需要10 * 2 * 2 = 40字节，加上最后8字节的幻数。
 
   Footer() = default;
 

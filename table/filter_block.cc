@@ -18,6 +18,7 @@ static const size_t kFilterBase = 1 << kFilterBaseLg;
 FilterBlockBuilder::FilterBlockBuilder(const FilterPolicy* policy)
     : policy_(policy) {}
 
+//开启一个新的filter。
 void FilterBlockBuilder::StartBlock(uint64_t block_offset) {
   uint64_t filter_index = (block_offset / kFilterBase);
   assert(filter_index >= filter_offsets_.size());
@@ -26,12 +27,15 @@ void FilterBlockBuilder::StartBlock(uint64_t block_offset) {
   }
 }
 
+//将当前key放入keys_中，start_记录该项。
 void FilterBlockBuilder::AddKey(const Slice& key) {
   Slice k = key;
   start_.push_back(keys_.size());
   keys_.append(k.data(), k.size());
 }
 
+//在落盘前调用本函数，按照一定格式将result_中的内容输出，作为一个block落盘。
+//具体格式参考：https://blog.csdn.net/Swartz2015/article/details/66475878?locationNum=13&fps=1
 Slice FilterBlockBuilder::Finish() {
   if (!start_.empty()) {
     GenerateFilter();
@@ -48,6 +52,8 @@ Slice FilterBlockBuilder::Finish() {
   return Slice(result_);
 }
 
+//根据keys_和start_解析出当前存储的key放入tmp_keys_，通过filter算法生成一个filter，放入result_中，同时
+//filter_offsets_也记录该项。
 void FilterBlockBuilder::GenerateFilter() {
   const size_t num_keys = start_.size();
   if (num_keys == 0) {

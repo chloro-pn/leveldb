@@ -224,14 +224,15 @@ Status TableBuilder::Finish() {
   BlockHandle filter_block_handle, metaindex_block_handle, index_block_handle;
 
   // Write filter block
-  // 过滤器我们先略过。
+  // 将filter block写入磁盘，如果有的话。
+  // filter block的作用是可以帮助快速确认磁盘中是否有要查找的key（match策略有布隆过滤等）
   if (ok() && r->filter_block != nullptr) {
     WriteRawBlock(r->filter_block->Finish(), kNoCompression,
                   &filter_block_handle);
   }
 
   // Write metaindex block
-  // 写入元信息
+  // 写入元信息,主要存储了filter block的信息
   if (ok()) {
     BlockBuilder meta_index_block(&r->options);
     if (r->filter_block != nullptr) {
@@ -258,10 +259,11 @@ Status TableBuilder::Finish() {
       r->index_block.Add(r->last_key, Slice(handle_encoding));
       r->pending_index_entry = false;
     }
+    //写入index block
     WriteBlock(&r->index_block, &index_block_handle);
   }
 
-  //filter block和metaindex block可能不会写入，根据options的配置。
+  //filter block可能不会写入，根据options的配置。
 
   // Write footer
   // 写入footer。
@@ -271,6 +273,7 @@ Status TableBuilder::Finish() {
     footer.set_index_handle(index_block_handle);
     std::string footer_encoding;
     footer.EncodeTo(&footer_encoding);
+    //将fotter构造的内容写入f中。
     r->status = r->file->Append(footer_encoding);
     if (r->status.ok()) {
       r->offset += footer_encoding.size();

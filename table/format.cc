@@ -28,6 +28,7 @@ Status BlockHandle::DecodeFrom(Slice* input) {
   }
 }
 
+//将元索引和索引信息写入，最后写入两个特殊数字。
 void Footer::EncodeTo(std::string* dst) const {
   const size_t original_size = dst->size();
   metaindex_handle_.EncodeTo(dst);
