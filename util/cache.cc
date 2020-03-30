@@ -19,7 +19,7 @@ Cache::~Cache() {}
 namespace {
 
 // LRU cache implementation
-//
+// LRU缓存的实现
 // Cache entries have an "in_cache" boolean indicating whether the cache has a
 // reference on the entry.  The only ways that this can become false without the
 // entry being passed to its "deleter" are via Erase(), via Insert() when
@@ -104,6 +104,7 @@ class HandleTable {
  private:
   // The table consists of an array of buckets where each bucket is
   // a linked list of cache entries that hash into the bucket.
+  // table中包含一组桶，每个桶是一个链表，链表中存储了hash到该桶的LRUHandle。
   uint32_t length_;
   uint32_t elems_;
   LRUHandle** list_;
@@ -226,11 +227,13 @@ void LRUCache::Unref(LRUHandle* e) {
   assert(e->refs > 0);
   e->refs--;
   if (e->refs == 0) {  // Deallocate.
+    //如果没有人再持有e，则调用deleter函数，并释放e。
     assert(!e->in_cache);
     (*e->deleter)(e->key(), e->value);
     free(e);
   } else if (e->in_cache && e->refs == 1) {
     // No longer in use; move to lru_ list.
+    //否则将其从in_use链表中移除，然后添加到lru链表开头。
     LRU_Remove(e);
     LRU_Append(&lru_, e);
   }
@@ -258,6 +261,7 @@ Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash) {
   return reinterpret_cast<Cache::Handle*>(e);
 }
 
+//客户端release资源时，会调用Unref函数，该函数将handle从in_use链表中删除，然后放回到lru链表的开头。
 void LRUCache::Release(Cache::Handle* handle) {
   MutexLock l(&mutex_);
   Unref(reinterpret_cast<LRUHandle*>(handle));
@@ -360,10 +364,12 @@ class ShardedLRUCache : public Cache {
     const uint32_t hash = HashSlice(key);
     return shard_[Shard(hash)].Insert(key, hash, value, charge, deleter);
   }
+
   Handle* Lookup(const Slice& key) override {
     const uint32_t hash = HashSlice(key);
     return shard_[Shard(hash)].Lookup(key, hash);
   }
+
   void Release(Handle* handle) override {
     LRUHandle* h = reinterpret_cast<LRUHandle*>(handle);
     shard_[Shard(h->hash)].Release(handle);

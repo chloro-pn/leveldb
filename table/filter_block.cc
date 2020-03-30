@@ -93,6 +93,7 @@ FilterBlockReader::FilterBlockReader(const FilterPolicy* policy,
   num_ = (n - 5 - last_word) / 4;
 }
 
+//输入一个block_offset和一个key，快速判断文件中是不是一定不存在这个key。
 bool FilterBlockReader::KeyMayMatch(uint64_t block_offset, const Slice& key) {
   uint64_t index = block_offset >> base_lg_;
   if (index < num_) {
@@ -100,6 +101,7 @@ bool FilterBlockReader::KeyMayMatch(uint64_t block_offset, const Slice& key) {
     uint32_t limit = DecodeFixed32(offset_ + index * 4 + 4);
     if (start <= limit && limit <= static_cast<size_t>(offset_ - data_)) {
       Slice filter = Slice(data_ + start, limit - start);
+      //policy_真正存储了具体的过滤策略，例如布隆过滤器。
       return policy_->KeyMayMatch(key, filter);
     } else if (start == limit) {
       // Empty filters do not match any keys

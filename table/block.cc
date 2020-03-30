@@ -161,6 +161,7 @@ class Block::Iter : public Iterator {
     } while (ParseNextKey() && NextEntryOffset() < original);
   }
 
+  //block的迭代器，利用restart数组二分查找最后一个key小于target的重启点。
   void Seek(const Slice& target) override {
     // Binary search in restart array to find the last restart point
     // with a key < target
@@ -190,6 +191,7 @@ class Block::Iter : public Iterator {
     }
 
     // Linear search (within restart block) for first key >= target
+    // 从查找到的点开始线性搜索第一个key >= targetentry。
     SeekToRestartPoint(left);
     while (true) {
       if (!ParseNextKey()) {
@@ -256,6 +258,7 @@ Iterator* Block::NewIterator(const Comparator* comparator) {
   if (size_ < sizeof(uint32_t)) {
     return NewErrorIterator(Status::Corruption("bad block contents"));
   }
+  //restart的个数。
   const uint32_t num_restarts = NumRestarts();
   if (num_restarts == 0) {
     return NewEmptyIterator();

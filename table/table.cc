@@ -44,15 +44,18 @@ Status Table::Open(const Options& options, RandomAccessFile* file,
 
   char footer_space[Footer::kEncodedLength];
   Slice footer_input;
+  //读入footer block
   Status s = file->Read(size - Footer::kEncodedLength, Footer::kEncodedLength,
                         &footer_input, footer_space);
   if (!s.ok()) return s;
 
   Footer footer;
+  //从内存中解码
   s = footer.DecodeFrom(&footer_input);
   if (!s.ok()) return s;
 
   // Read the index block
+  //根据footer的内容读取index block
   BlockContents index_block_contents;
   if (s.ok()) {
     ReadOptions opt;
@@ -75,6 +78,7 @@ Status Table::Open(const Options& options, RandomAccessFile* file,
     rep->filter_data = nullptr;
     rep->filter = nullptr;
     *table = new Table(rep);
+    //读取metaindex block
     (*table)->ReadMeta(footer);
   }
 
@@ -218,18 +222,23 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k, void* arg,
                                                 const Slice&)) {
   Status s;
   Iterator* iiter = rep_->index_block->NewIterator(rep_->options.comparator);
+  // 调用index block的迭代器的seek函数，我们知道index block存储的key是比其记录的data block中所有key还要小的内部使用key，
+  // value记录的是对应data block的offset和size。因此iiter->Seek函数会跳过所有不可能含有k的block。
   iiter->Seek(k);
   if (iiter->Valid()) {
     Slice handle_value = iiter->value();
     FilterBlockReader* filter = rep_->filter;
     BlockHandle handle;
+    //如果table文件中有filter设置的话，利用filter快速判断Table对应的文件中是不是一定不存在key。
     if (filter != nullptr && handle.DecodeFrom(&handle_value).ok() &&
         !filter->KeyMayMatch(handle.offset(), k)) {
       // Not found
     } else {
+      //可能是存在的，根据offset和size构造一个block_iter，寻找k。
       Iterator* block_iter = BlockReader(this, options, iiter->value());
       block_iter->Seek(k);
       if (block_iter->Valid()) {
+          //调用handle_result函数。注意，block_iter只是指向第一个>=key的对象，不意味这一定找到了，因此handle_result中还要进一步检测。
         (*handle_result)(arg, block_iter->key(), block_iter->value());
       }
       s = block_iter->status();

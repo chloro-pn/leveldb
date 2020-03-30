@@ -69,6 +69,7 @@ class LEVELDB_EXPORT Table {
   // Calls (*handle_result)(arg, ...) with the entry found after a call
   // to Seek(key).  May not make such a call if filter policy says
   // that key is not present.
+  // 在文件中查找key对应的值，如果找到的话调用handle_result函数。
   Status InternalGet(const ReadOptions&, const Slice& key, void* arg,
                      void (*handle_result)(void* arg, const Slice& k,
                                            const Slice& v));

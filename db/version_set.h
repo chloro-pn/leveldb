@@ -296,6 +296,7 @@ class VersionSet {
   Env* const env_;
   const std::string dbname_;
   const Options* const options_;
+  //3月30日分析类TableCache。
   TableCache* const table_cache_;
   const InternalKeyComparator icmp_;
   uint64_t next_file_number_;

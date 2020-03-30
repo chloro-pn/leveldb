@@ -26,5 +26,8 @@ BuildTable函数中使用了TableBuilder类，该类描述了sstable文件的具
 2020-03-28:
 * meta_index_block , filter block , footer block分析。
 
+2020-03-30:
+* TableCache::Get， TableCache::FindTable，Table::InternalGet
+
 ##### todo：
 * LRUCache分析

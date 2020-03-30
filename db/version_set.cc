@@ -264,8 +264,10 @@ struct Saver {
   std::string* value;
 };
 }  // namespace
+//就算调用这个函数也不意味着一定找到了，因为寻找的是内部第一个>=ikey的项，所以这里再进行比较。
 static void SaveValue(void* arg, const Slice& ikey, const Slice& v) {
   Saver* s = reinterpret_cast<Saver*>(arg);
+  //用saver s记录了查找的结果。
   ParsedInternalKey parsed_key;
   if (!ParseInternalKey(ikey, &parsed_key)) {
     s->state = kCorrupt;
@@ -371,7 +373,7 @@ Status Version::Get(const ReadOptions& options, const LookupKey& k,
       state->last_file_read = f;
       state->last_file_read_level = level;
 
-      //真正的查找函数。
+      //通过cache查找。
       state->s = state->vset->table_cache_->Get(*state->options, f->number,
                                                 f->file_size, state->ikey,
                                                 &state->saver, SaveValue);

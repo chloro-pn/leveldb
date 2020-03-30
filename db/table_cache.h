@@ -37,11 +37,13 @@ class TableCache {
 
   // If a seek to internal key "k" in specified file finds an entry,
   // call (*handle_result)(arg, found_key, found_value).
+  //如果在指定文件中找到了对应的key，则调用handle_result函数。
   Status Get(const ReadOptions& options, uint64_t file_number,
              uint64_t file_size, const Slice& k, void* arg,
              void (*handle_result)(void*, const Slice&, const Slice&));
 
   // Evict any entry for the specified file number
+  // 将对应的file_number指定的文件从缓存中移除。
   void Evict(uint64_t file_number);
 
  private:

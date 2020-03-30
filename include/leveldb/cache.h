@@ -29,8 +29,10 @@ class LEVELDB_EXPORT Cache;
 
 // Create a new cache with a fixed size capacity.  This implementation
 // of Cache uses a least-recently-used eviction policy.
+// 返回一个指定容量的LRU缓存类。
 LEVELDB_EXPORT Cache* NewLRUCache(size_t capacity);
 
+// 类Cache是一个基类，其不同的派生类实现了不同的缓存策略。
 class LEVELDB_EXPORT Cache {
  public:
   Cache() = default;
@@ -58,7 +60,7 @@ class LEVELDB_EXPORT Cache {
                          void (*deleter)(const Slice& key, void* value)) = 0;
 
   // If the cache has no mapping for "key", returns nullptr.
-  //
+  // 这里的key是对应的file number.
   // Else return a handle that corresponds to the mapping.  The caller
   // must call this->Release(handle) when the returned mapping is no
   // longer needed.
