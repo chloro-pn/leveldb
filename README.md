@@ -29,5 +29,17 @@ BuildTable函数中使用了TableBuilder类，该类描述了sstable文件的具
 2020-03-30:
 * TableCache::Get， TableCache::FindTable，Table::InternalGet
 
+2020-03-31:
+* TableCache, SharededLRUCache, LRUCache, LRUHandle类
+LRUCache对象中含有两个链表和一个hash表，hash表用来根据key快速找到对应的value。
+两个链表分别为lru_双向链表和in_use双向链表。执行LRU缓存算法。in_use链表用来记录
+那些被客户使用的缓存项，ref >= 2 （因为LRUCache本身持有其一个ref），当所有用户都
+release该缓存项时，ref == 1，然后将其放回给lru_链表。
+
+ps：个人觉得这种将结构逻辑和内容放在一起的做法并不会让代码变得更清晰。
+url:https://blog.csdn.net/u011693064/article/details/77485631
+
 ##### todo：
-* LRUCache分析
+* major compaction
+* memtable及其内存管理
+* version机制与recover机制

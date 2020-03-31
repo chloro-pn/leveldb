@@ -118,6 +118,7 @@ Status TableCache::Get(const ReadOptions& options, uint64_t file_number,
     Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
     //在table类中寻找k。
     s = t->InternalGet(options, k, arg, handle_result);
+    //释放资源，
     cache_->Release(handle);
   }
   return s;
