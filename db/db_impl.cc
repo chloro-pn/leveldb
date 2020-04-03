@@ -898,7 +898,7 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
   return versions_->LogAndApply(compact->compaction->edit(), &mutex_);
 }
 
-//真正的合并操作在这里发生，不过这也太复杂了，头疼
+//真正的合并操作在这里发生，不过这也太复杂了，头疼.
 Status DBImpl::DoCompactionWork(CompactionState* compact) {
   const uint64_t start_micros = env_->NowMicros();
   int64_t imm_micros = 0;  // Micros spent doing imm_ compactions
@@ -917,7 +917,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     compact->smallest_snapshot = snapshots_.oldest()->sequence_number();
   }
 
-  //目前没看懂
+  //目前没看懂，貌似是返回一个MergeIterator，该迭代器封装了多路归并操作。
   Iterator* input = versions_->MakeInputIterator(compact->compaction);
 
   // Release mutex while we're actually doing the compaction work
@@ -1000,6 +1000,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     if (!drop) {
       // Open output file if necessary
       if (compact->builder == nullptr) {
+        //打开合并之后需要输出到的文件。
         status = OpenCompactionOutputFile(compact);
         if (!status.ok()) {
           break;

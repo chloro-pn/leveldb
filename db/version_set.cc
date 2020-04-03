@@ -1381,8 +1381,6 @@ FileMetaData* FindSmallestBoundaryFile(
 // parameters:
 //   in     level_files:      List of files to search for boundary files.
 //   in/out compaction_files: List of files to extend by adding boundary files.
-// 我个人的理解是，leveldb的搜索机制需要确保同一个user_key的所有版本都要在同一个level的sstable中，
-// 所以在选择合并文件时需要考虑那些刚好在边界处user_key相等而internalkey不等的sstable一起加入合并操作。
 void AddBoundaryInputs(const InternalKeyComparator& icmp,
                        const std::vector<FileMetaData*>& level_files,
                        std::vector<FileMetaData*>* compaction_files) {
