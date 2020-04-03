@@ -313,6 +313,7 @@ class VersionSet {
 
   // Per-level key at which the next compaction at that level should start.
   // Either an empty string, or a valid InternalKey.
+  //记录了每一层level下一次合并操作应该开始的internalKey。
   std::string compact_pointer_[config::kNumLevels];
 };
 
@@ -364,8 +365,10 @@ class Compaction {
 
   Compaction(const Options* options, int level);
 
+  //本次合并操作所在的level。
   int level_;
   uint64_t max_output_file_size_;
+  //本次合并操作处于的版本。
   Version* input_version_;
   VersionEdit edit_;
 

@@ -548,6 +548,7 @@ void Version::GetOverlappingInputs(int level, const InternalKey* begin,
       if (level == 0) {
         // Level-0 files may overlap each other.  So check if the newly
         // added file has expanded the range.  If so, restart search.
+        // 由于level0层的sstable文件的key之间可能相互重叠，因此需要不断扩展限制key，直至当前范围限制点不会切分某个sstable文件。
         if (begin != nullptr && user_cmp->Compare(file_start, user_begin) < 0) {
           user_begin = file_start;
           inputs->clear();
@@ -1275,6 +1276,8 @@ Compaction* VersionSet::PickCompaction() {
 
   // We prefer compactions triggered by too much data in a level over
   // the compactions triggered by seeks.
+  //首先根据compaction_score_和file_to_compact_两个参数的检测分别获取两种触发机制分别是否
+  //触发了compaction流程，size_compactoin优先级较高。
   const bool size_compaction = (current_->compaction_score_ >= 1);
   const bool seek_compaction = (current_->file_to_compact_ != nullptr);
   if (size_compaction) {
@@ -1346,7 +1349,8 @@ bool FindLargestKey(const InternalKeyComparator& icmp,
 FileMetaData* FindSmallestBoundaryFile(
     const InternalKeyComparator& icmp,
     const std::vector<FileMetaData*>& level_files,
-    const InternalKey& largest_key) {
+    const InternalKey& largest_key)
+{
   const Comparator* user_cmp = icmp.user_comparator();
   FileMetaData* smallest_boundary_file = nullptr;
   for (size_t i = 0; i < level_files.size(); ++i) {
@@ -1377,6 +1381,8 @@ FileMetaData* FindSmallestBoundaryFile(
 // parameters:
 //   in     level_files:      List of files to search for boundary files.
 //   in/out compaction_files: List of files to extend by adding boundary files.
+// 我个人的理解是，leveldb的搜索机制需要确保同一个user_key的所有版本都要在同一个level的sstable中，
+// 所以在选择合并文件时需要考虑那些刚好在边界处user_key相等而internalkey不等的sstable一起加入合并操作。
 void AddBoundaryInputs(const InternalKeyComparator& icmp,
                        const std::vector<FileMetaData*>& level_files,
                        std::vector<FileMetaData*>* compaction_files) {
@@ -1406,18 +1412,23 @@ void VersionSet::SetupOtherInputs(Compaction* c) {
   const int level = c->level();
   InternalKey smallest, largest;
 
+  //为了防止某些sstable文件的边界处user_key相等而internalkey不相等，合并的时候
+  //应该把这些边界文件也加上，
   AddBoundaryInputs(icmp_, current_->files_[level], &c->inputs_[0]);
   GetRange(c->inputs_[0], &smallest, &largest);
 
+  //将level + 1层所有与level层文件集合的范围有重合的sstable文件全部找出来并放入inputs_[1]中。
   current_->GetOverlappingInputs(level + 1, &smallest, &largest,
                                  &c->inputs_[1]);
 
   // Get entire range covered by compaction
   InternalKey all_start, all_limit;
+  // 获取level层和level+1层所有合并文件的InternalKey范围。
   GetRange2(c->inputs_[0], c->inputs_[1], &all_start, &all_limit);
 
   // See if we can grow the number of inputs in "level" without
   // changing the number of "level+1" files we pick up.
+  //这一步目前没看懂，跳过。
   if (!c->inputs_[1].empty()) {
     std::vector<FileMetaData*> expanded0;
     current_->GetOverlappingInputs(level, &all_start, &all_limit, &expanded0);
@@ -1450,6 +1461,7 @@ void VersionSet::SetupOtherInputs(Compaction* c) {
 
   // Compute the set of grandparent files that overlap this compaction
   // (parent == level+1; grandparent == level+2)
+  // 计算level+2层（如果有这个层的话）的重叠输入文件。
   if (level + 2 < config::kNumLevels) {
     current_->GetOverlappingInputs(level + 2, &all_start, &all_limit,
                                    &c->grandparents_);
@@ -1459,13 +1471,17 @@ void VersionSet::SetupOtherInputs(Compaction* c) {
   // We update this immediately instead of waiting for the VersionEdit
   // to be applied so that if the compaction fails, we will try a different
   // key range next time.
+  //更新我们在这个level执行下一次合并操作的place。
   compact_pointer_[level] = largest.Encode().ToString();
   c->edit_.SetCompactPointer(level, largest);
 }
 
+/*对level层的包含key在begin到end之间的sstable文件进行compaction操作。
+ */
 Compaction* VersionSet::CompactRange(int level, const InternalKey* begin,
                                      const InternalKey* end) {
   std::vector<FileMetaData*> inputs;
+  //获取level层所有包含key从begin到end的sstable文件，将其元信息放入inputs中。
   current_->GetOverlappingInputs(level, begin, end, &inputs);
   if (inputs.empty()) {
     return nullptr;
@@ -1475,13 +1491,16 @@ Compaction* VersionSet::CompactRange(int level, const InternalKey* begin,
   // But we cannot do this for level-0 since level-0 files can overlap
   // and we must not pick one file and drop another older file if the
   // two files overlap.
+
   if (level > 0) {
+    //对于level > 0的层来说，合并文件的总大小有一个限制值。
     const uint64_t limit = MaxFileSizeForLevel(options_, level);
     uint64_t total = 0;
     for (size_t i = 0; i < inputs.size(); i++) {
       uint64_t s = inputs[i]->file_size;
       total += s;
       if (total >= limit) {
+        //如果合并文件大小之和大于限制值，则放弃后面的文件。
         inputs.resize(i + 1);
         break;
       }
@@ -1491,7 +1510,7 @@ Compaction* VersionSet::CompactRange(int level, const InternalKey* begin,
   Compaction* c = new Compaction(options_, level);
   c->input_version_ = current_;
   c->input_version_->Ref();
-  c->inputs_[0] = inputs;
+  c->inputs_[0] = inputs; //第一项是level层的合并文件。
   SetupOtherInputs(c);
   return c;
 }
