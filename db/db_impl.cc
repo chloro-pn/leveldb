@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The LevelDB Authors. All rights reserved.
+﻿// Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
@@ -818,6 +818,7 @@ Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
     out.number = file_number;
     out.smallest.Clear();
     out.largest.Clear();
+    //每次打开一个新的输出文件，都要push进outputs_。
     compact->outputs.push_back(out);
     mutex_.Unlock();
   }
@@ -898,7 +899,7 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
   return versions_->LogAndApply(compact->compaction->edit(), &mutex_);
 }
 
-//真正的合并操作在这里发生，不过这也太复杂了，头疼.
+//major compaction操作实现
 Status DBImpl::DoCompactionWork(CompactionState* compact) {
   const uint64_t start_micros = env_->NowMicros();
   int64_t imm_micros = 0;  // Micros spent doing imm_ compactions
@@ -917,12 +918,13 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     compact->smallest_snapshot = snapshots_.oldest()->sequence_number();
   }
 
-  //目前没看懂，貌似是返回一个MergeIterator，该迭代器封装了多路归并操作。
+  //返回一个MergeIterator，该迭代器封装了多路归并操作。
   Iterator* input = versions_->MakeInputIterator(compact->compaction);
 
   // Release mutex while we're actually doing the compaction work
   mutex_.Unlock();
 
+  //所有参与合并的文件跳到第一个kv，并找到当前最小的k对应的文件。
   input->SeekToFirst();
   Status status;
   ParsedInternalKey ikey;
@@ -960,6 +962,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       has_current_user_key = false;
       last_sequence_for_key = kMaxSequenceNumber;
     } else {
+        //开始了一个新的user_key。
       if (!has_current_user_key ||
           user_comparator()->Compare(ikey.user_key, Slice(current_user_key)) !=
               0) {
@@ -969,12 +972,15 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         last_sequence_for_key = kMaxSequenceNumber;
       }
 
+      // 如果这个条件成立，则当前处理的key之前肯定有一个相同userkey，如果
+      // 这个userkey的版本号小于等于最小的快照版本，则之后具有相同user_key的值都可以被删除。
       if (last_sequence_for_key <= compact->smallest_snapshot) {
         // Hidden by an newer entry for same user key
         drop = true;  // (A)
       } else if (ikey.type == kTypeDeletion &&
                  ikey.sequence <= compact->smallest_snapshot &&
                  compact->compaction->IsBaseLevelForKey(ikey.user_key)) {
+        // 如果当前key是被删除标识，且序列号小于所有快照版本，且更高level中没有这个数据，则可以被删除。
         // For this user key:
         // (1) there is no data in higher levels
         // (2) data in lower levels will have larger sequence numbers
@@ -1038,6 +1044,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   input = nullptr;
 
   CompactionStats stats;
+  //统计一些合并信息。
   stats.micros = env_->NowMicros() - start_micros - imm_micros;
   for (int which = 0; which < 2; which++) {
     for (int i = 0; i < compact->compaction->num_input_files(which); i++) {
@@ -1049,6 +1056,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   }
 
   mutex_.Lock();
+  //将统计信息记录在成员stats_对应的level中。
   stats_[compact->compaction->level() + 1].Add(stats);
 
   if (status.ok()) {

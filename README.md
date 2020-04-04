@@ -49,6 +49,10 @@ ps：尝试实现lru策略，发现智能指针的引用计数确实不能解决
 
 major compaction部分源代码。。。敢不敢再复杂一点，和文件操作相关的内容实在太太太繁琐了。
 
+2020-04-04:
+摸清了一些合并流程，关键在于理解各种迭代器的逻辑。参考：https://www.cnblogs.com/ewouldblock7/p/3641692.html
+major compaction是个大工程，也应该算是整个leveldb中最复杂的部分了。
+
 ##### todo：
 * major compaction
 * memtable及其内存管理

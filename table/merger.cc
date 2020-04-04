@@ -176,6 +176,7 @@ void MergingIterator::FindLargest() {
 }
 }  // namespace
 
+// 小优化，如果children中没有文件或者只有一个文件，则不需要构造MergingIterator。
 Iterator* NewMergingIterator(const Comparator* comparator, Iterator** children,
                              int n) {
   assert(n >= 0);
